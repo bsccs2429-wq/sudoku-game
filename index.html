@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sudoku</title>
+<style>
+:root{--bg:#eef1ec;--panel:#fff;--ink:#1f2a24;--muted:#6b7a70;--line:#c5cdc6;--thick:#1f2a24;--sel:#cfe8d8;--peer:#e4efe7;--same:#f6e3a6;--given:#1f2a24;--user:#1c6b8f;--err:#c0392b;--errbg:#f8d9d5;--accent:#2f7a55;
+padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a16;--panel:#1d2620;--ink:#e6ede8;--muted:#8fa196;--line:#38453c;--thick:#9fb3a5;--sel:#2f5a42;--peer:#26352b;--same:#5c4f1c;--given:#e6ede8;--user:#6cc1e6;--err:#ff8a7a;--errbg:#5a2a25;--accent:#58b887}}
+:root[data-theme="dark"]{--bg:#141a16;--panel:#1d2620;--ink:#e6ede8;--muted:#8fa196;--line:#38453c;--thick:#9fb3a5;--sel:#2f5a42;--peer:#26352b;--same:#5c4f1c;--given:#e6ede8;--user:#6cc1e6;--err:#ff8a7a;--errbg:#5a2a25;--accent:#58b887}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Georgia,'Times New Roman',serif;min-height:100vh;display:flex;justify-content:center;padding:16px}
+main{width:100%;max-width:460px}
+header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+h1{font-size:28px;margin:0;letter-spacing:.5px}
+.stats{display:flex;gap:14px;color:var(--muted);font:14px system-ui,sans-serif}
+.stats b{color:var(--ink)}
+.bar{display:flex;gap:8px;margin-bottom:12px;font-family:system-ui,sans-serif}
+select,button{font:14px system-ui,sans-serif;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
+button:hover,select:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible,.cell:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+#grid{display:grid;grid-template-columns:repeat(9,1fr);border:3px solid var(--thick);background:var(--panel);aspect-ratio:1;width:100%}
+.cell{position:relative;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);font-size:clamp(18px,6vw,28px);cursor:pointer;user-select:none;background:var(--panel);padding:0;border-radius:0;color:var(--user)}
+.cell.given{color:var(--given);font-weight:700}
+.cell.peer{background:var(--peer)}
+.cell.same{background:var(--same)}
+.cell.sel{background:var(--sel)}
+.cell.err{background:var(--errbg);color:var(--err)}
+.cell.r2,.cell.r5{border-bottom:3px solid var(--thick)}
+.cell.c2,.cell.c5{border-right:3px solid var(--thick)}
+.notes{position:absolute;inset:1px;display:grid;grid-template-columns:repeat(3,1fr);font:clamp(8px,2.3vw,11px) system-ui,sans-serif;color:var(--muted);line-height:1;text-align:center;align-items:center}
+.pad{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin-top:12px}
+.pad button{padding:10px 0;font-size:20px;font-family:Georgia,serif;position:relative}
+.pad button small{position:absolute;right:4px;bottom:1px;font:10px system-ui;color:var(--muted)}
+.pad button:disabled{opacity:.3;cursor:default}
+.tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.tools button{flex:1;min-width:70px}
+.tools .on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#msg{margin-top:10px;min-height:22px;font:14px system-ui,sans-serif;color:var(--muted);text-align:center}
+#win{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:20px}
+#win.show{display:flex}
+#win div{background:var(--panel);border-radius:14px;padding:28px;text-align:center;max-width:320px}
+#win h2{margin:0 0 8px}
+@media (prefers-reduced-motion:no-preference){.cell{transition:background .12s}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Sudoku</h1>
+<div class="stats"><span>Time <b id="time">0:00</b></span><span>Mistakes <b id="mist">0</b></span></div></header>
+<div class="bar">
+<select id="diff" aria-label="Difficulty"><option value="36">Easy</option><option value="30" selected>Medium</option><option value="25">Hard</option></select>
+<button id="new" class="primary">New game</button>
+<button id="theme" aria-label="Toggle dark mode">Theme</button>
+</div>
+<div id="grid" role="grid" aria-label="Sudoku board"></div>
+<div class="pad" id="pad"></div>
+<div class="tools">
+<button id="notes">Notes: off</button>
+<button id="erase">Erase</button>
+<button id="undo">Undo</button>
+<button id="hint">Hint</button>
+<button id="check">Check</button>
+<button id="solve">Solve</button>
+</div>
+<div id="msg">Select a cell, then pick a number. Keyboard: arrows, 1-9, Backspace, N for notes.</div>
+</main>
+<div id="win"><div><h2>Puzzle solved!</h2><p id="winTxt"></p><button class="primary" id="again">Play again</button></div></div>
+<script>
+(function(){
+var $=function(s){return document.querySelector(s)};
+var grid=$('#grid'),pad=$('#pad'),msg=$('#msg');
+var solution,puzzle,board,notes,sel=-1,noteMode=false,mistakes=0,secs=0,timer=null,history=[],over=false;
+
+function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+function ok(b,i,n){var r=Math.floor(i/9),c=i%9;
+ for(var k=0;k<9;k++){if(b[r*9+k]===n||b[k*9+c]===n)return false}
+ var br=r-r%3,bc=c-c%3;
+ for(var y=0;y<3;y++)for(var x=0;x<3;x++)if(b[(br+y)*9+bc+x]===n)return false;
+ return true}
+function fill(b){var i=b.indexOf(0);if(i<0)return true;
+ var nums=shuffle([1,2,3,4,5,6,7,8,9]);
+ for(var k=0;k<9;k++){if(ok(b,i,nums[k])){b[i]=nums[k];if(fill(b))return true;b[i]=0}}
+ return false}
+function count(b,limit){var i=b.indexOf(0);if(i<0)return 1;var t=0;
+ for(var n=1;n<=9&&t<limit;n++){if(ok(b,i,n)){b[i]=n;t+=count(b,limit-t);b[i]=0}}
+ return t}
+function generate(clues){
+ var s=Array(81).fill(0);fill(s);
+ var p=s.slice(),idx=shuffle(Array.from({length:81},function(_,i){return i})),left=81;
+ for(var k=0;k<81&&left>clues;k++){var i=idx[k],v=p[i];p[i]=0;
+  if(count(p.slice(),2)!==1)p[i]=v;else left--}
+ return {s:s,p:p}}
+
+function build(){grid.innerHTML='';
+ for(var i=0;i<81;i++){var d=document.createElement('div');
+  d.className='cell r'+Math.floor(i/9)+' c'+(i%9);d.setAttribute('role','gridcell');d.tabIndex=i===0?0:-1;d.dataset.i=i;
+  d.addEventListener('click',function(){select(+this.dataset.i)});grid.appendChild(d)}
+ pad.innerHTML='';
+ for(var n=1;n<=9;n++){var b=document.createElement('button');b.dataset.n=n;b.innerHTML=n+'<small></small>';
+  b.addEventListener('click',function(){input(+this.dataset.n)});pad.appendChild(b)}}
+
+function start(){
+ msg.textContent='Generating puzzle...';
+ setTimeout(function(){
+  var g=generate(+$('#diff').value);solution=g.s;puzzle=g.p;board=g.p.slice();
+  notes=Array.from({length:81},function(){return []});history=[];mistakes=0;secs=0;over=false;sel=-1;
+  $('#mist').textContent=0;$('#win').classList.remove('show');
+  clearInterval(timer);timer=setInterval(function(){secs++;$('#time').textContent=fmt(secs)},1000);
+  $('#time').textContent='0:00';msg.textContent='Select a cell, then pick a number.';render()},20)}
+function fmt(s){return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+
+function conflict(i){var v=board[i];if(!v)return false;var r=Math.floor(i/9),c=i%9;
+ for(var k=0;k<9;k++){if(k!==c&&board[r*9+k]===v)return true;if(k!==r&&board[k*9+c]===v)return true}
+ var br=r-r%3,bc=c-c%3;
+ for(var y=0;y<3;y++)for(var x=0;x<3;x++){var j=(br+y)*9+bc+x;if(j!==i&&board[j]===v)return true}
+ return false}
+
+function render(){
+ var cells=grid.children,sv=sel>=0?board[sel]:0,counts=Array(10).fill(0);
+ for(var i=0;i<81;i++){var el=cells[i],v=board[i];counts[v]++;
+  var cls='cell r'+Math.floor(i/9)+' c'+(i%9);
+  if(puzzle[i])cls+=' given';
+  if(sel>=0){var sr=Math.floor(sel/9),sc=sel%9,r=Math.floor(i/9),c=i%9;
+   if(i===sel)cls+=' sel';
+   else if(v&&v===sv)cls+=' same';
+   else if(r===sr||c===sc||(r-r%3===sr-sr%3&&c-c%3===sc-sc%3))cls+=' peer'}
+  if(v&&conflict(i))cls+=' err';
+  el.className=cls;el.tabIndex=i===(sel<0?0:sel)?0:-1;
+  if(v){el.textContent=v}
+  else if(notes[i].length){var h='<div class="notes">';
+   for(var n=1;n<=9;n++)h+='<span>'+(notes[i].indexOf(n)>=0?n:'')+'</span>';el.innerHTML=h+'</div>'}
+  else el.textContent=''}
+ var btns=pad.children;
+ for(var n=1;n<=9;n++){btns[n-1].disabled=counts[n]>=9;btns[n-1].querySelector('small').textContent=9-counts[n]>0?9-counts[n]:''}
+ $('#notes').textContent='Notes: '+(noteMode?'on':'off');$('#notes').classList.toggle('on',noteMode)}
+
+function select(i){sel=i;render();grid.children[i].focus()}
+function snap(){history.push({b:board.slice(),n:notes.map(function(a){return a.slice()})});if(history.length>200)history.shift()}
+function clearPeerNotes(i,n){var r=Math.floor(i/9),c=i%9;
+ for(var j=0;j<81;j++){var jr=Math.floor(j/9),jc=j%9;
+  if(jr===r||jc===c||(jr-jr%3===r-r%3&&jc-jc%3===c-c%3)){var k=notes[j].indexOf(n);if(k>=0)notes[j].splice(k,1)}}}
+
+function input(n){
+ if(over||sel<0)return void(msg.textContent='Select a cell first.');
+ if(puzzle[sel])return void(msg.textContent='That number is part of the puzzle.');
+ snap();
+ if(noteMode){if(board[sel])return;var k=notes[sel].indexOf(n);if(k>=0)notes[sel].splice(k,1);else notes[sel].push(n)}
+ else{board[sel]=n;notes[sel]=[];
+  if(n!==solution[sel]){mistakes++;$('#mist').textContent=mistakes;msg.textContent='That number conflicts with the solution.'}
+  else{msg.textContent='';clearPeerNotes(sel,n)}}
+ render();checkWin()}
+
+function erase(){if(over||sel<0||puzzle[sel])return;snap();board[sel]=0;notes[sel]=[];render()}
+function undo(){if(over||!history.length)return;var h=history.pop();board=h.b;notes=h.n;render()}
+function hint(){if(over)return;
+ var t=sel>=0&&!puzzle[sel]&&board[sel]!==solution[sel]?sel:-1;
+ if(t<0){var c=[];for(var i=0;i<81;i++)if(board[i]!==solution[i])c.push(i);if(!c.length)return;t=c[Math.floor(Math.random()*c.length)]}
+ snap();board[t]=solution[t];notes[t]=[];clearPeerNotes(t,solution[t]);sel=t;msg.textContent='Hint added.';render();checkWin()}
+function check(){var bad=0,empty=0;
+ for(var i=0;i<81;i++){if(!board[i])empty++;else if(board[i]!==solution[i])bad++}
+ msg.textContent=bad?bad+' cell'+(bad>1?'s are':' is')+' wrong.':(empty?'No mistakes so far. '+empty+' cells left.':'')}
+function solve(){if(over)return;board=solution.slice();notes=notes.map(function(){return[]});stop();msg.textContent='Solution revealed.';render()}
+function stop(){over=true;clearInterval(timer)}
+function checkWin(){for(var i=0;i<81;i++)if(board[i]!==solution[i])return;
+ stop();$('#winTxt').textContent='Time '+fmt(secs)+' with '+mistakes+' mistake'+(mistakes===1?'':'s')+'.';$('#win').classList.add('show')}
+
+document.addEventListener('keydown',function(e){
+ if(e.target.tagName==='SELECT')return;
+ var k=e.key;
+ if(k>='1'&&k<='9'){input(+k)}
+ else if(k==='Backspace'||k==='Delete'||k==='0'){erase()}
+ else if(k==='n'||k==='N'){noteMode=!noteMode;render()}
+ else if(k==='z'&&(e.ctrlKey||e.metaKey)){undo()}
+ else if(k.indexOf('Arrow')===0){e.preventDefault();var i=sel<0?0:sel,r=Math.floor(i/9),c=i%9;
+  if(k==='ArrowUp')r=(r+8)%9;if(k==='ArrowDown')r=(r+1)%9;if(k==='ArrowLeft')c=(c+8)%9;if(k==='ArrowRight')c=(c+1)%9;select(r*9+c)}});
+
+$('#new').onclick=start;$('#again').onclick=start;$('#diff').onchange=start;
+$('#notes').onclick=function(){noteMode=!noteMode;render()};
+$('#erase').onclick=erase;$('#undo').onclick=undo;$('#hint').onclick=hint;$('#check').onclick=check;$('#solve').onclick=solve;
+$('#theme').onclick=function(){var r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;r.dataset.theme=dark?'light':'dark'};
+build();start();
+})();
+</script>
+</body>
+</html>
